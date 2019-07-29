@@ -34,6 +34,7 @@ import com.google.cloud.hadoop.gcsio.GoogleCloudStorageItemInfo;
 import com.google.cloud.hadoop.gcsio.StorageResourceId;
 import com.google.common.flogger.GoogleLogger;
 import com.google.gson.Gson;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -59,6 +60,7 @@ public class CoopLockRecordsDao {
 
   private static final String LOCK_METADATA_KEY = "lock";
 
+  private static final int MIN_BACK_OFF_INTERVAL_MILLIS = 500;
   private static final int MAX_BACK_OFF_INTERVAL_MILLIS = 2_000;
   private static final int RETRY_LOCK_INTERVAL_MILLIS = 2_000;
 
@@ -156,7 +158,7 @@ public class CoopLockRecordsDao {
 
     ExponentialBackOff backOff =
         new ExponentialBackOff.Builder()
-            .setInitialIntervalMillis(100)
+            .setInitialIntervalMillis(MIN_BACK_OFF_INTERVAL_MILLIS)
             .setMultiplier(1.2)
             .setMaxIntervalMillis(MAX_BACK_OFF_INTERVAL_MILLIS)
             .setMaxElapsedTimeMillis(Integer.MAX_VALUE)
@@ -310,11 +312,18 @@ public class CoopLockRecordsDao {
             .filter(o -> o.getResources().stream().anyMatch(resourcesToRemove::contains))
             .collect(Collectors.toList());
     checkState(
-        recordsToRemove.size() == 1 && recordsToRemove.get(0).getOperationId().equals(operationId),
-        "All resources %s should belong to %s operation, but was %s",
-        resourcesToRemove.size(),
-        recordsToRemove.size());
+        recordsToRemove.size() == 1,
+        "One %s operation record with %s resources should be unlocked, but found %s records:\n%s",
+        operationId,
+        resourcesToRemove,
+        recordsToRemove.size(),
+        recordsToRemove);
     CoopLockRecord operationToRemove = recordsToRemove.get(0);
+    checkState(
+        operationToRemove.getOperationId().equals(operationId),
+        "All resources should be locked by %s operation, but they are locked by %s operation",
+        operationId,
+        operationToRemove.getOperationId());
     checkState(
         operationToRemove.getResources().equals(resourcesToRemove),
         "All of %s resources should be locked by operation, but was locked only %s resources",
