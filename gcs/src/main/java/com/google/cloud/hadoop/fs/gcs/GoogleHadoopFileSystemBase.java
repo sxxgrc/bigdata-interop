@@ -37,6 +37,7 @@ import static com.google.common.flogger.LazyArgs.lazy;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.google.api.client.auth.oauth2.Credential;
+import com.google.api.client.http.HttpRequest;
 import com.google.cloud.hadoop.fs.gcs.auth.GcsDelegationTokens;
 import com.google.cloud.hadoop.gcsio.CreateFileOptions;
 import com.google.cloud.hadoop.gcsio.FileInfo;
@@ -1651,9 +1652,20 @@ public abstract class GoogleHadoopFileSystemBase extends FileSystem
   private GoogleCloudStorageFileSystem createGcsFs(Configuration config) throws IOException {
     Credential credential;
     try {
-      credential =
-          getCredential(
-              new AccessTokenProviderClassFromConfigFactory().withOverridePrefix("fs.gs"), config);
+      // TODO: Set way of determining if signer is being used.
+      credential = new Credential(new Credential.AccessMethod() {
+        @Override
+        public void intercept(HttpRequest request, String accessToken) throws IOException {
+          remoteSignerPlugin.signRequest(request);
+        }
+        @Override
+        public String getAccessTokenFromRequest(HttpRequest request) {
+          return "";
+        }
+      });
+//      credential =
+//          getCredential(
+//              new AccessTokenProviderClassFromConfigFactory().withOverridePrefix("fs.gs"), config);
     } catch (GeneralSecurityException e) {
       throw new RuntimeException(e);
     }
